@@ -416,11 +416,14 @@ mattablecolumninfo_add_mattable_index(MatTableColumnInfo *matcolinfo, Hypertable
 							   InvalidOid, /* indexRelationId */
 							   InvalidOid, /* parentIndexId */
 							   InvalidOid, /* parentConstraintId */
-							   false,	   /* is_alter_table */
-							   false,	   /* check_rights */
-							   false,	   /* check_not_in_use */
-							   false,	   /* skip_build */
-							   false);	   /* quiet */
+#if PG16_GE
+							   -1, /* total_parts */
+#endif
+							   false,  /* is_alter_table */
+							   false,  /* check_rights */
+							   false,  /* check_not_in_use */
+							   false,  /* skip_build */
+							   false); /* quiet */
 		indxtuple = SearchSysCache1(RELOID, ObjectIdGetDatum(indxaddr.objectId));
 
 		if (!HeapTupleIsValid(indxtuple))

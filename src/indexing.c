@@ -150,11 +150,14 @@ create_default_index(const Hypertable *ht, List *indexelems)
 				InvalidOid, /* indexRelationId */
 				InvalidOid, /* parentIndexId */
 				InvalidOid, /* parentConstraintId */
-				false,		/* is_alter_table */
-				false,		/* check_rights */
-				false,		/* check_not_in_use */
-				false,		/* skip_build */
-				true);		/* quiet */
+#if PG16_GE
+				-1, /* total_parts */
+#endif
+				false, /* is_alter_table */
+				false, /* check_rights */
+				false, /* check_not_in_use */
+				false, /* skip_build */
+				true); /* quiet */
 }
 
 static const Node *
@@ -293,6 +296,9 @@ ts_indexing_root_table_create_index(IndexStmt *stmt, const char *queryString,
 	Oid relid;
 	LOCKMODE lockmode;
 	ObjectAddress root_table_address;
+#if PG16_GE
+	int total_parts = -1;
+#endif
 
 	if (stmt->concurrent)
 		PreventInTransactionBlock(true, "CREATE INDEX CONCURRENTLY");
@@ -346,6 +352,9 @@ ts_indexing_root_table_create_index(IndexStmt *stmt, const char *queryString,
 						 errdetail("Table \"%s\" contains chunks of the wrong type.",
 								   stmt->relation->relname)));
 		}
+#if PG16_GE
+		total_parts = list_length(inheritors) - 1;
+#endif
 		list_free(inheritors);
 	}
 
@@ -360,11 +369,14 @@ ts_indexing_root_table_create_index(IndexStmt *stmt, const char *queryString,
 									 InvalidOid, /* no predefined OID */
 									 InvalidOid, /* parentIndexId */
 									 InvalidOid, /* parentConstraintId */
-									 false,		 /* is_alter_table */
-									 true,		 /* check_rights */
-									 false,		 /* check_not_in_use */
-									 false,		 /* skip_build */
-									 false);	 /* quiet */
+#if PG16_GE
+									 total_parts, /* total_parts */
+#endif
+									 false,	 /* is_alter_table */
+									 true,	 /* check_rights */
+									 false,	 /* check_not_in_use */
+									 false,	 /* skip_build */
+									 false); /* quiet */
 
 	return root_table_address;
 }
