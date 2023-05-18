@@ -574,7 +574,9 @@ ts_make_pathkey_from_sortinfo(PlannerInfo *root, Expr *expr, Relids nullable_rel
 	/* Now find or (optionally) create a matching EquivalenceClass */
 	eclass = get_eclass_for_sort_expr(root,
 									  expr,
+#if PG16_LT
 									  nullable_relids,
+#endif
 									  opfamilies,
 									  opcintype,
 									  collation,
