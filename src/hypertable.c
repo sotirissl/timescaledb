@@ -1294,14 +1294,14 @@ hypertable_check_associated_schema_permissions(const char *schema_name, Oid user
 		 * Schema does not exist, so we must check that the user has
 		 * privileges to create the schema in the current database
 		 */
-		if (pg_database_aclcheck(MyDatabaseId, user_oid, ACL_CREATE) != ACLCHECK_OK)
+		if (pg_database_aclcheck_compat(MyDatabaseId, user_oid, ACL_CREATE) != ACLCHECK_OK)
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 					 errmsg("permissions denied: cannot create schema \"%s\" in database \"%s\"",
 							schema_name,
 							get_database_name(MyDatabaseId))));
 	}
-	else if (pg_namespace_aclcheck(schema_oid, user_oid, ACL_CREATE) != ACLCHECK_OK)
+	else if (pg_namespace_aclcheck_compat(schema_oid, user_oid, ACL_CREATE) != ACLCHECK_OK)
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("permissions denied: cannot create chunks in schema \"%s\"", schema_name)));
@@ -2508,7 +2508,7 @@ ts_hypertable_set_integer_now_func(PG_FUNCTION_ARGS)
 
 	integer_now_func_validate(now_func_oid, open_dim_type);
 
-	aclresult = pg_proc_aclcheck(now_func_oid, GetUserId(), ACL_EXECUTE);
+	aclresult = pg_proc_aclcheck_compat(now_func_oid, GetUserId(), ACL_EXECUTE);
 	if (aclresult != ACLCHECK_OK)
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),

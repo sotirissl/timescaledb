@@ -191,7 +191,7 @@ tablespace_validate_revoke_internal(const char *tspcname, tuple_found_func tuple
 static void
 validate_revoke_create(Oid tspcoid, Oid role, Oid relid)
 {
-	AclResult aclresult = pg_tablespace_aclcheck(tspcoid, role, ACL_CREATE);
+	AclResult aclresult = pg_tablespace_aclcheck_compat(tspcoid, role, ACL_CREATE);
 
 	if (aclresult != ACLCHECK_OK)
 		ereport(ERROR,
@@ -554,7 +554,7 @@ ts_tablespace_attach_internal(Name tspcname, Oid hypertable_oid, bool if_not_att
 		 * user here, since we're not actually creating a table using this
 		 * tablespace at this point
 		 */
-		aclresult = pg_tablespace_aclcheck(tspc_oid, ownerid, ACL_CREATE);
+		aclresult = pg_tablespace_aclcheck_compat(tspc_oid, ownerid, ACL_CREATE);
 
 		if (aclresult != ACLCHECK_OK)
 			ereport(ERROR,

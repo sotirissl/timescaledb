@@ -449,7 +449,7 @@ reorder_chunk(Oid chunk_id, Oid index_id, bool verbose, Oid wait_id, Oid destina
 	{
 		AclResult aclresult;
 
-		aclresult = pg_tablespace_aclcheck(destination_tablespace, GetUserId(), ACL_CREATE);
+		aclresult = pg_tablespace_aclcheck_compat(destination_tablespace, GetUserId(), ACL_CREATE);
 		if (aclresult != ACLCHECK_OK)
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
@@ -462,7 +462,7 @@ reorder_chunk(Oid chunk_id, Oid index_id, bool verbose, Oid wait_id, Oid destina
 	{
 		AclResult aclresult;
 
-		aclresult = pg_tablespace_aclcheck(index_tablespace, GetUserId(), ACL_CREATE);
+		aclresult = pg_tablespace_aclcheck_compat(index_tablespace, GetUserId(), ACL_CREATE);
 		if (aclresult != ACLCHECK_OK)
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),

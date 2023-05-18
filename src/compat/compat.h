@@ -827,4 +827,36 @@ RelationGetSmgr(Relation rel)
 #endif
 #endif
 
+/*
+ * PG16 replaces most aclcheck functions with a common object_aclcheck() function
+ * https://github.com/postgres/postgres/commit/c727f511
+ */
+#if PG16_LT
+#define pg_namespace_aclcheck_compat(nsp_oid, roleid, mode)                                        \
+	pg_namespace_aclcheck(nsp_oid, roleid, mode)
+#define pg_tablespace_aclcheck_compat(spc_oid, roleid, mode)                                       \
+	pg_tablespace_aclcheck(spc_oid, roleid, mode)
+#define pg_database_aclcheck_compat(db_oid, roleid, mode) pg_database_aclcheck(db_oid, roleid, mode)
+#define pg_proc_aclcheck_compat(proc_oid, roleid, mode) pg_proc_aclcheck(proc_oid, roleid, mode)
+#define pg_foreign_server_aclcheck_compat(srv_oid, roleid, mode)                                   \
+	pg_foreign_server_aclcheck(srv_oid, roleid, mode)
+#else
+#include <catalog/pg_database_d.h>
+#include <catalog/pg_foreign_server_d.h>
+#include <catalog/pg_namespace_d.h>
+#include <catalog/pg_proc_d.h>
+#include <catalog/pg_tablespace_d.h>
+
+#define pg_namespace_aclcheck_compat(nsp_oid, roleid, mode)                                        \
+	object_aclcheck(NamespaceRelationId, nsp_oid, roleid, mode)
+#define pg_tablespace_aclcheck_compat(spc_oid, roleid, mode)                                       \
+	object_aclcheck(TableSpaceRelationId, spc_oid, roleid, mode)
+#define pg_database_aclcheck_compat(db_oid, roleid, mode)                                          \
+	object_aclcheck(DatabaseRelationId, db_oid, roleid, mode)
+#define pg_proc_aclcheck_compat(proc_oid, roleid, mode)                                            \
+	object_aclcheck(ProcedureRelationId, proc_oid, roleid, mode)
+#define pg_foreign_server_aclcheck_compat(srv_oid, roleid, mode)                                   \
+	object_aclcheck(ForeignServerRelationId, srv_oid, roleid, mode)
+#endif
+
 #endif /* TIMESCALEDB_COMPAT_H */
