@@ -696,7 +696,7 @@ pg_strtoint64(const char *str)
 						  NULL,                                                                    \
 						  multiXactCutoff,                                                         \
 						  NULL)
-#else
+#elif PG16_LT
 #define vacuum_set_xid_limits_compat(rel,                                                          \
 									 freeze_min_age,                                               \
 									 freeze_table_age,                                             \
@@ -717,6 +717,23 @@ pg_strtoint64(const char *str)
 							  &oldestMxact,                                                        \
 							  freezeLimit,                                                         \
 							  multiXactCutoff);                                                    \
+	} while (0)
+#else
+#define vacuum_set_xid_limits_compat(rel,                                                          \
+									 freeze_min_age,                                               \
+									 freeze_table_age,                                             \
+									 multixact_freeze_min_age,                                     \
+									 multixact_freeze_table_age,                                   \
+									 oldestXmin,                                                   \
+									 freezeLimit,                                                  \
+									 multiXactCutoff)                                              \
+	do                                                                                             \
+	{                                                                                              \
+		struct VacuumCutoffs cutoffs;                                                              \
+		vacuum_get_cutoffs(OldHeap, 0, &cutoffs);                                                  \
+		*(oldestXmin) = cutoffs.OldestXmin;                                                        \
+		*(freezeLimit) = cutoffs.FreezeLimit;                                                      \
+		*(multiXactCutoff) = cutoffs.MultiXactCutoff;                                              \
 	} while (0)
 #endif
 
