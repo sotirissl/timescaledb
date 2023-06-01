@@ -900,6 +900,9 @@ RelationGetSmgr(Relation rel)
 /*
  * PG16 replaces most aclcheck functions with a common object_aclcheck() function
  * https://github.com/postgres/postgres/commit/c727f511
+ *
+ * PG16 replaces pg_foo_ownercheck() functions with a common object_ownercheck() function
+ * https://github.com/postgres/postgres/commit/afbfc029
  */
 #if PG16_LT
 #define pg_namespace_aclcheck_compat(nsp_oid, roleid, mode)                                        \
@@ -910,6 +913,7 @@ RelationGetSmgr(Relation rel)
 #define pg_proc_aclcheck_compat(proc_oid, roleid, mode) pg_proc_aclcheck(proc_oid, roleid, mode)
 #define pg_foreign_server_aclcheck_compat(srv_oid, roleid, mode)                                   \
 	pg_foreign_server_aclcheck(srv_oid, roleid, mode)
+#define pg_class_ownercheck_compat(class_oid, roleid) pg_class_ownercheck(class_oid, roleid)
 #else
 #include <catalog/pg_database_d.h>
 #include <catalog/pg_foreign_server_d.h>
@@ -927,6 +931,8 @@ RelationGetSmgr(Relation rel)
 	object_aclcheck(ProcedureRelationId, proc_oid, roleid, mode)
 #define pg_foreign_server_aclcheck_compat(srv_oid, roleid, mode)                                   \
 	object_aclcheck(ForeignServerRelationId, srv_oid, roleid, mode)
+#define pg_class_ownercheck_compat(class_oid, roleid)                                              \
+	object_ownercheck(RelationRelationId, class_oid, roleid)
 #endif
 
 #endif /* TIMESCALEDB_COMPAT_H */
