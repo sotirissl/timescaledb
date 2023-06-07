@@ -92,6 +92,7 @@ if(CMAKE_BUILD_TYPE MATCHES Debug)
     dist_util.sql
     dist_triggers.sql
     dist_backup.sql
+    hypertable_generalization.sql
     insert_memory_usage.sql
     information_view_chunk_count.sql
     read_only.sql
