@@ -18,8 +18,10 @@
 /dist_remote_error-*.sql
 /dist_remote_error.text
 /hypertable_distributed-*.sql
+/include/skip_scan_query-*.sql
 /jit-*.sql
 /modify_exclusion-*.sql
+/partialize_finalize-*.sql
 /plan_skip_scan-*.sql
 /remote-copy-*sv
 /remote_copy-*.sql

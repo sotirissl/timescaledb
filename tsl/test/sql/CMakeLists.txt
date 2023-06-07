@@ -23,9 +23,7 @@ set(TEST_FILES
     exp_cagg_origin.sql
     exp_cagg_timezone.sql
     move.sql
-    partialize_finalize.sql
     reorder.sql
-    skip_scan.sql
     size_utils_tsl.sql)
 
 if(USE_TELEMETRY)
@@ -156,7 +154,9 @@ set(TEST_TEMPLATES
     compression_insert.sql.in
     compression_sorted_merge.sql.in
     cagg_union_view.sql.in
+    partialize_finalize.sql.in
     plan_skip_scan.sql.in
+    skip_scan.sql.in
     transparent_decompression.sql.in
     transparent_decompression_ordered_index.sql.in)
 
@@ -196,6 +196,19 @@ if(EXISTS ${PG_CONFIG_H})
   endif()
 endif()
 
+# PG16 renamed GUC force_parallel_mode to debug_parallel_query
+# Replace the ${TS_PARALLEL_QUERY_GUC} variable with the right names for the respective versions
+# https://github.com/postgres/postgres/commit/5352ca22e
+if(${PG_VERSION_MAJOR} LESS "16")
+  set(TS_PARALLEL_QUERY_GUC "force_parallel_mode")
+else()
+  set(TS_PARALLEL_QUERY_GUC "debug_parallel_query")
+endif()
+
+# The following include file is also affected by the
+# force_parallel_mode to debug_parallel_query rename
+list(APPEND TEST_TEMPLATES include/skip_scan_query.sql.in)
+
 # Regression tests that vary with PostgreSQL version. Generated test files are
 # put in the original source directory since all tests must be in the same
 # directory. These files are updated when the template is edited, but not when
@@ -207,8 +220,11 @@ foreach(TEMPLATE_FILE ${TEST_TEMPLATES})
   string(SUBSTRING ${TEMPLATE_FILE} 0 ${TEMPLATE_NAME_LEN} TEMPLATE)
   set(TEST_FILE ${TEMPLATE}-${TEST_VERSION_SUFFIX}.sql)
   configure_file(${TEMPLATE_FILE} ${CMAKE_CURRENT_SOURCE_DIR}/${TEST_FILE}
-                 COPYONLY)
-  list(APPEND TEST_FILES ${TEST_FILE})
+                 @ONLY)
+  if(NOT CMAKE_SOURCE_DIR MATCHES "include/$")
+    # Append files not in include/ folder to TEST_FILES
+    list(APPEND TEST_FILES ${TEST_FILE})
+  endif()
 endforeach(TEMPLATE_FILE)
 
 foreach(TEST_FILES_GE_14 ${TEST_FILES_ON_VERSION_GE_14})
@@ -217,7 +233,7 @@ foreach(TEST_FILES_GE_14 ${TEST_FILES_ON_VERSION_GE_14})
   string(SUBSTRING ${TEST_FILES_GE_14} 0 ${TEST_FILES_GE_14_NAME_LEN} TEMPLATE)
   set(TEST_FILE ${TEMPLATE}-${TEST_VERSION_SUFFIX}.sql)
   configure_file(${TEST_FILES_GE_14} ${CMAKE_CURRENT_SOURCE_DIR}/${TEST_FILE}
-                 COPYONLY)
+                 @ONLY)
   list(APPEND TEST_FILES ${TEST_FILE})
 endforeach(TEST_FILES_GE_14)
 
