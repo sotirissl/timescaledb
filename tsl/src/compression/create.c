@@ -978,9 +978,13 @@ drop_existing_compression_table(Hypertable *ht)
 						   " compressed hypertable could not be found.",
 						   NameStr(ht->fd.table_name))));
 
-	/* need to drop the old compressed hypertable in case the segment by columns changed (and
-	 * thus the column types of compressed hypertable need to change) */
-	ts_hypertable_drop(compressed, DROP_RESTRICT);
+	/* Need to drop the old compressed hypertable in case the segment by columns
+	 * changed (and thus the column types of compressed hypertable need to change)
+	 *
+	 * We need to cascade the delete since chunks are now not removed during
+	 * decompression.
+	 * */
+	ts_hypertable_drop(compressed, DROP_CASCADE);
 	ts_hypertable_compression_delete_by_hypertable_id(ht->fd.id);
 	ts_hypertable_unset_compressed(ht);
 }

@@ -97,7 +97,7 @@ ALTER TABLE test_retention_table set (timescaledb.compress, timescaledb.compress
 SELECT count(compress_chunk(chunk.schema_name|| '.' || chunk.table_name)) as count_compressed
 FROM _timescaledb_catalog.chunk chunk
 INNER JOIN _timescaledb_catalog.hypertable hypertable ON (chunk.hypertable_id = hypertable.id)
-WHERE hypertable.table_name like 'test_retention_table' and chunk.compressed_chunk_id IS NULL;
+WHERE hypertable.table_name like 'test_retention_table' and chunk.status & 1 = 0;
  count_compressed 
 ------------------
                 5

@@ -600,6 +600,7 @@ SELECT count(*) FROM (select decompress_chunk(ch) FROM show_chunks('i2980_cagg2'
 (1 row)
 
 ALTER MATERIALIZED VIEW i2980_cagg2 SET (timescaledb.compress = 'false');
+NOTICE:  drop cascades to table _timescaledb_internal.compress_hyper_16_4_chunk
 SELECT compress_chunk(ch) FROM show_chunks('i2980_cagg2') ch;
 ERROR:  compression not enabled on "i2980_cagg2"
 -- test error handling when trying to create cagg on internal hypertable

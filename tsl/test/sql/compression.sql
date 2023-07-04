@@ -151,7 +151,7 @@ FROM _timescaledb_catalog.chunk ch1, _timescaledb_catalog.hypertable ht where ch
 select tableoid::regclass, count(*) from conditions group by tableoid order by tableoid;
 
 select  compress_chunk(ch1.schema_name|| '.' || ch1.table_name)
-FROM _timescaledb_catalog.chunk ch1, _timescaledb_catalog.hypertable ht where ch1.hypertable_id = ht.id and ht.table_name like 'conditions' and ch1.compressed_chunk_id IS NULL;
+FROM _timescaledb_catalog.chunk ch1, _timescaledb_catalog.hypertable ht where ch1.hypertable_id = ht.id and ht.table_name like 'conditions' and ch1.status & 1 = 0;
 
 select tableoid::regclass, count(*) from conditions group by tableoid order by tableoid;
 
@@ -209,7 +209,7 @@ where ch1.hypertable_id = ht.id and ht.table_name like 'conditions'
 and map.chunk_id = ch1.id;
 
 --make sure  compressed_chunk_id  is reset to NULL
-select ch1.compressed_chunk_id IS NULL
+select ch1.status & 1 = 0
 FROM _timescaledb_catalog.chunk ch1, _timescaledb_catalog.hypertable ht where ch1.hypertable_id = ht.id and ht.table_name like 'conditions';
 
 -- test plans get invalidated when chunks get compressed

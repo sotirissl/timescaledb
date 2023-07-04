@@ -354,7 +354,7 @@ find_chunk_to_merge_into(Hypertable *ht, Chunk *current_chunk)
 	/* If there is no previous adjacent chunk along the time dimension or
 	 * if it hasn't been compressed yet, we can't merge.
 	 */
-	if (!previous_chunk || !OidIsValid(previous_chunk->fd.compressed_chunk_id))
+	if (!previous_chunk || !ts_chunk_is_compressed(previous_chunk))
 		return NULL;
 
 	Assert(previous_chunk->cube->num_slices > 0);
@@ -476,9 +476,18 @@ compress_chunk_impl(Oid hypertable_relid, Oid chunk_relid)
 	mergable_chunk = find_chunk_to_merge_into(cxt.srcht, cxt.srcht_chunk);
 	if (!mergable_chunk)
 	{
-		/* create compressed chunk and a new table */
-		compress_ht_chunk = create_compress_chunk(cxt.compress_ht, cxt.srcht_chunk, InvalidOid);
-		new_compressed_chunk = true;
+		compress_ht_chunk = ts_chunk_get_by_id(cxt.srcht_chunk->fd.compressed_chunk_id, false);
+
+		/*
+		 * Compressed chunk should be created at insert times.
+		 * If it happens that they are not created, create them here.
+		 * This is to support previous behavior which always created them here.
+		 */
+		if (!compress_ht_chunk)
+		{
+			compress_ht_chunk = create_compress_chunk(cxt.compress_ht, cxt.srcht_chunk, InvalidOid);
+			new_compressed_chunk = true;
+		}
 	}
 	else
 	{
@@ -506,7 +515,7 @@ compress_chunk_impl(Oid hypertable_relid, Oid chunk_relid)
 	ts_chunk_drop_fks(cxt.srcht_chunk);
 	after_size = ts_relation_size_impl(compress_ht_chunk->table_id);
 
-	if (new_compressed_chunk)
+	if (!mergable_chunk)
 	{
 		compression_chunk_size_catalog_insert(cxt.srcht_chunk->fd.id,
 											  &before_size,
@@ -515,12 +524,16 @@ compress_chunk_impl(Oid hypertable_relid, Oid chunk_relid)
 											  cstat.rowcnt_pre_compression,
 											  cstat.rowcnt_post_compression);
 
-		/* Copy chunk constraints (including fkey) to compressed chunk.
-		 * Do this after compressing the chunk to avoid holding strong, unnecessary locks on the
-		 * referenced table during compression.
-		 */
-		ts_chunk_constraints_create(cxt.compress_ht, compress_ht_chunk);
-		ts_trigger_create_all_on_chunk(compress_ht_chunk);
+		/* If we made a new compressed chunk, we should copy the constraints */
+		if (new_compressed_chunk)
+		{
+			/* Copy chunk constraints (including fkey) to compressed chunk.
+			 * Do this after compressing the chunk to avoid holding strong, unnecessary locks on the
+			 * referenced table during compression.
+			 */
+			ts_chunk_constraints_create(cxt.compress_ht, compress_ht_chunk);
+			ts_trigger_create_all_on_chunk(compress_ht_chunk);
+		}
 		ts_chunk_set_compressed_chunk(cxt.srcht_chunk, compress_ht_chunk->fd.id);
 	}
 	else
@@ -583,12 +596,11 @@ decompress_chunk_impl(Oid uncompressed_hypertable_relid, Oid uncompressed_chunk_
 	if (uncompressed_chunk->fd.hypertable_id != uncompressed_hypertable->fd.id)
 		elog(ERROR, "hypertable and chunk do not match");
 
-	if (uncompressed_chunk->fd.compressed_chunk_id == INVALID_CHUNK_ID)
+	if (!ts_chunk_validate_chunk_status_for_operation(uncompressed_chunk,
+													  CHUNK_DECOMPRESS,
+													  !if_compressed))
 	{
 		ts_cache_release(hcache);
-		ereport((if_compressed ? NOTICE : ERROR),
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("chunk \"%s\" is not compressed", get_rel_name(uncompressed_chunk_relid))));
 		return false;
 	}
 
@@ -644,17 +656,6 @@ decompress_chunk_impl(Oid uncompressed_hypertable_relid, Oid uncompressed_chunk_
 	ts_compression_chunk_size_delete(uncompressed_chunk->fd.id);
 	ts_chunk_clear_compressed_chunk(uncompressed_chunk);
 
-	/*
-	 * Lock the compressed chunk that is going to be deleted. At this point,
-	 * the reference to the compressed chunk is already removed from the
-	 * catalog. So, new readers do not include it in their operations.
-	 *
-	 * Note: Calling performMultipleDeletions in chunk_index_tuple_delete
-	 * also requests an AccessExclusiveLock on the compressed_chunk. However,
-	 * this call makes the lock on the chunk explicit.
-	 */
-	LockRelationOid(compressed_chunk->table_id, AccessExclusiveLock);
-	ts_chunk_drop(compressed_chunk, DROP_RESTRICT, -1);
 	ts_cache_release(hcache);
 	return true;
 }
@@ -667,13 +668,8 @@ decompress_chunk_impl(Oid uncompressed_hypertable_relid, Oid uncompressed_chunk_
 Oid
 tsl_compress_chunk_wrapper(Chunk *chunk, bool if_not_compressed)
 {
-	if (chunk->fd.compressed_chunk_id != INVALID_CHUNK_ID)
-	{
-		ereport((if_not_compressed ? NOTICE : ERROR),
-				(errcode(ERRCODE_DUPLICATE_OBJECT),
-				 errmsg("chunk \"%s\" is already compressed", get_rel_name(chunk->table_id))));
+	if (!ts_chunk_validate_chunk_status_for_operation(chunk, CHUNK_COMPRESS, !if_not_compressed))
 		return chunk->table_id;
-	}
 
 	return compress_chunk_impl(chunk->hypertable_relid, chunk->table_id);
 }

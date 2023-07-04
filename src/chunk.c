@@ -1201,6 +1201,8 @@ chunk_create_from_hypercube_after_lock(const Hypertable *ht, Hypercube *cube,
 		}
 	}
 #endif
+	Chunk *compressed_chunk = NULL;
+
 	/* Insert any new dimension slices into metadata */
 	ts_dimension_slice_insert_multi(cube->slices, cube->num_slices);
 
@@ -1210,6 +1212,49 @@ chunk_create_from_hypercube_after_lock(const Hypertable *ht, Hypercube *cube,
 													  table_name,
 													  prefix,
 													  get_next_chunk_id());
+
+	/* If we have compressoin enabled, we create the compressed chunk here
+	 * to reduce locking contention since we already use heavy locks to attach
+	 * chunks to the hypertable.
+	 */
+	if (ht->fd.compressed_hypertable_id != 0)
+	{
+		Hypertable *compress_ht = ts_hypertable_get_by_id(ht->fd.compressed_hypertable_id);
+		int32 chunk_id = get_next_chunk_id();
+		NameData *compress_chunk_table_name = palloc0(sizeof(*compress_chunk_table_name));
+
+		int namelen = snprintf(NameStr(*compress_chunk_table_name),
+							   NAMEDATALEN,
+							   "compress%s_%d_chunk",
+							   NameStr(compress_ht->fd.associated_table_prefix),
+							   chunk_id);
+
+		if (namelen >= NAMEDATALEN)
+			ereport(ERROR,
+					(errcode(ERRCODE_INTERNAL_ERROR),
+					 errmsg("invalid name \"%s\" for compressed chunk",
+							NameStr(*compress_chunk_table_name)),
+					 errdetail("The associated table prefix is too long.")));
+		Hypercube *c_cube = ts_hypercube_alloc(0);
+
+		compressed_chunk = chunk_create_only_table_after_lock(compress_ht,
+															  c_cube,
+															  schema_name,
+															  NameStr(*compress_chunk_table_name),
+															  NULL,
+															  chunk_id);
+
+		compressed_chunk->constraints = ts_chunk_constraints_alloc(1, CurrentMemoryContext);
+
+		chunk_add_constraints(compressed_chunk);
+		chunk_insert_into_metadata_after_lock(compressed_chunk);
+		chunk_create_table_constraints(compress_ht, compressed_chunk);
+		pfree(c_cube);
+		pfree(compress_chunk_table_name);
+	}
+
+	if (compressed_chunk)
+		chunk->fd.compressed_chunk_id = compressed_chunk->fd.id;
 
 	chunk_add_constraints(chunk);
 	chunk_insert_into_metadata_after_lock(chunk);
@@ -1458,6 +1503,7 @@ Chunk *
 ts_chunk_create_for_point(const Hypertable *ht, const Point *p, bool *found, const char *schema,
 						  const char *prefix)
 {
+	Hypertable *compress_ht = NULL;
 	/*
 	 * We're going to have to resurrect or create the chunk.
 	 * Serialize chunk creation around a lock on the "main table" to avoid
@@ -1466,6 +1512,15 @@ ts_chunk_create_for_point(const Hypertable *ht, const Point *p, bool *found, con
 	 * conflicts with itself. The lock needs to be held until transaction end.
 	 */
 	LockRelationOid(ht->main_table_relid, ShareUpdateExclusiveLock);
+	/* If we have a compressed hypertable set, lock up the compressed hypertable
+	 * so we can create the compressed chunk too
+	 */
+	if (ht->fd.compressed_hypertable_id != 0)
+	{
+		compress_ht = ts_hypertable_get_by_id(ht->fd.compressed_hypertable_id);
+		Assert(compress_ht);
+		LockRelationOid(compress_ht->main_table_relid, ShareUpdateExclusiveLock);
+	}
 
 	DEBUG_WAITPOINT("chunk_create_for_point");
 
@@ -1486,6 +1541,8 @@ ts_chunk_create_for_point(const Hypertable *ht, const Point *p, bool *found, con
 			 * release the lock early.
 			 */
 			UnlockRelationOid(ht->main_table_relid, ShareUpdateExclusiveLock);
+			if (compress_ht)
+				UnlockRelationOid(compress_ht->main_table_relid, ShareUpdateExclusiveLock);
 			if (found)
 				*found = true;
 			return chunk;
@@ -3168,14 +3225,18 @@ ts_chunk_exists_with_compression(int32 hypertable_id)
 	ts_scanner_foreach(&iterator)
 	{
 		bool isnull_dropped;
+		bool isnull_status;
 		bool isnull_chunk_id =
 			slot_attisnull(ts_scan_iterator_slot(&iterator), Anum_chunk_compressed_chunk_id);
 		bool dropped = DatumGetBool(
 			slot_getattr(ts_scan_iterator_slot(&iterator), Anum_chunk_dropped, &isnull_dropped));
 		/* dropped is not NULLABLE */
 		Assert(!isnull_dropped);
+		int status = DatumGetInt32(
+			slot_getattr(ts_scan_iterator_slot(&iterator), Anum_chunk_status, &isnull_status));
+		Assert(!isnull_status);
 
-		if (!isnull_chunk_id && !dropped)
+		if (!isnull_chunk_id && !dropped && (status & CHUNK_STATUS_COMPRESSED) > 0)
 		{
 			found = true;
 			break;
@@ -3637,7 +3698,6 @@ chunk_change_compressed_status_in_tuple(TupleInfo *ti, int32 compressed_chunk_id
 	}
 	else
 	{
-		form.compressed_chunk_id = INVALID_CHUNK_ID;
 		form.status =
 			ts_clear_flags_32(form.status,
 							  CHUNK_STATUS_COMPRESSED | CHUNK_STATUS_COMPRESSED_UNORDERED |
@@ -4460,21 +4520,27 @@ ts_chunk_validate_chunk_status_for_operation(const Chunk *chunk, ChunkOperation 
 			case CHUNK_COMPRESS:
 			{
 				if (ts_flags_are_set_32(chunk_status, CHUNK_STATUS_COMPRESSED))
+				{
 					ereport((throw_error ? ERROR : NOTICE),
 							(errcode(ERRCODE_DUPLICATE_OBJECT),
 							 errmsg("chunk \"%s\" is already compressed",
 									get_rel_name(chunk_relid))));
-				return false;
+					return false;
+				}
+				break;
 			}
 			/* Only compressed chunks can be decompressed */
 			case CHUNK_DECOMPRESS:
 			{
 				if (!ts_flags_are_set_32(chunk_status, CHUNK_STATUS_COMPRESSED))
+				{
 					ereport((throw_error ? ERROR : NOTICE),
 							(errcode(ERRCODE_DUPLICATE_OBJECT),
 							 errmsg("chunk \"%s\" is already decompressed",
 									get_rel_name(chunk_relid))));
-				return false;
+					return false;
+				}
+				break;
 			}
 			default:
 				break;
